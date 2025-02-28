@@ -59,7 +59,7 @@ datasets:
     log_low: true
 
 #### Test Settings
-#dataroot_unpaired: 
+dataroot_unpaired: input
 dataroot_GT: LOLdataset/eval15/high
 dataroot_LR: LOLdataset/eval15/low
 model_path: pretrained_weights_lol/net_G.pth

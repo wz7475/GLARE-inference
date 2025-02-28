@@ -68,8 +68,9 @@ cd GLARE
   conda install pytorch=1.11 torchvision cudatoolkit=11.3 -c pytorch
   pip install addict future lmdb numpy opencv-python Pillow pyyaml requests scikit-image scipy tqdm yapf einops tb-nightly natsort
   pip install pyiqa==0.1.4 
-  pip install pytorch_lightning==1.6.0
+  pip install pytorch_lightning
   pip install --force-reinstall charset-normalizer==3.1.0
+  pip install lpips
   ```
 
 - **Build CUDA extensions:**

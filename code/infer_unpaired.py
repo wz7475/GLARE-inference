@@ -4,6 +4,9 @@ from collections import OrderedDict
 import tqdm
 from natsort import natsort
 import argparse
+
+from torch.nn import Module
+
 import options.options as option
 from models import create_model
 import torch
@@ -12,6 +15,77 @@ import numpy as np
 import pandas as pd
 import os
 import cv2
+
+import os
+from argparse import ArgumentParser
+from typing import List, Tuple
+
+from PIL import Image
+
+
+def resize_bbox(
+    bbox: List[int], original_size: Tuple[int, int], target_size: Tuple[int, int]
+):
+    """
+    Converts and resizes from
+    Args:
+        bbox:
+        original_size:
+        target_size:
+
+    Returns:
+
+    """
+    l = bbox[0]
+    t = bbox[1]
+    a = bbox[2]
+    b = bbox[3]
+    return [
+        max((l / original_size[0]) * target_size[0], 0),
+        max((t / original_size[1]) * target_size[1], 0),
+        min((a / original_size[0]) * target_size[0], target_size[0]),
+        min((b / original_size[1]) * target_size[1], target_size[1]),
+    ]
+
+
+def process_image(
+    img_path: str,
+    annotation_path_in: str,
+    annotation_path_out: str,
+    target_size: Tuple[int, int] = (640, 640),
+) -> None:
+    with Image.open(img_path) as img:
+        img_orig_size = img.size
+    new_annotation_lines = []
+    print(f"read {annotation_path_in}")
+    with open(annotation_path_in) as fp:
+        split_lines = [line.split(",") for line in fp.readlines()]
+        for elements in split_lines:
+            bbox = [int(x) for x in elements[1:5]]
+            resized_bbox = resize_bbox(bbox, img_orig_size, target_size)
+            updated_elements = (
+                elements[:1] + [str(x) for x in resized_bbox] + elements[5:]
+            )
+            new_annotation_lines.append(",".join(updated_elements))
+    with open(annotation_path_out, "w") as fp:
+        fp.writelines(new_annotation_lines)
+    print(f"saved {annotation_path_out}")
+
+
+def process_dir(input_dir: str, output_dir: str) -> None:
+    img_paths = [
+        os.path.join(input_dir, filename)
+        for filename in os.listdir(input_dir)
+        if filename.split(".")[-1].lower().lower() in ["jpg", "jpeg", "png", "ppm"]
+    ]
+    for img_path in img_paths:
+        annotation_file_name = f"{os.path.basename(img_path).lower()}.txt"
+        process_image(
+            img_path,
+            os.path.join(input_dir, annotation_file_name),
+            os.path.join(output_dir, annotation_file_name)
+        )
+
 
 
 def fiFindByWildcard(wildcard):
@@ -87,53 +161,58 @@ def auto_padding(img, times=16):
     img = cv2.copyMakeBorder(img, h1, h2, w1, w2, cv2.BORDER_REFLECT)
     return img, [h1, h2, w1, w2]
 
+def inference_for_image(input_path: str, output_path: str, opt: dict, model: Module) -> None:
+    img = imread(input_path)
+    raw_shape = img.shape
+
+    img, padding_params = auto_padding(img)
+    his = hiseq_color_cv2_img(img)
+    if opt.get("histeq_as_input", False):
+        img = his
+
+    lr_t = t(img)
+    if opt["datasets"]["train"].get("log_low", False):
+        lr_t = torch.log(torch.clamp(lr_t + 1e-3, min=1e-3))
+    if opt.get("concat_histeq", False):
+        his = t(his)
+        lr_t = torch.cat([lr_t, his], dim=1)
+    heat = opt['heat']
+    with torch.cuda.amp.autocast():
+        sr_t = model.get_sr(lq=lr_t.cuda(), heat=None)
+
+    sr = rgb(torch.clamp(sr_t, 0, 1)[:, :, padding_params[0]:sr_t.shape[2] - padding_params[1],
+             padding_params[2]:sr_t.shape[3] - padding_params[3]])
+
+    assert raw_shape == sr.shape
+    imwrite(output_path, sr)
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--opt", default="./code/confs/LOL.yml")
-    parser.add_argument("-n", "--name", default="unpaired")
+    parser.add_argument("-o", "--output_dir", default="output")
+    parser.add_argument("-i", "--input_dir", default="input")
     args = parser.parse_args()
+    input_dir = args.input_dir
+    output_dir = args.output_dir
     conf_path = args.opt
-    conf = conf_path.split('/')[-1].replace('.yml', '')
     model, opt = load_model(conf_path)
     device = 'cuda:0'
     model.netG = model.netG.to(device)
     model.net_hq=model.net_hq.to(device)
     
-    lr_dir = opt['dataroot_unpaired']
-    lr_paths = fiFindByWildcard(os.path.join(lr_dir, '*.*'))
+    lr_paths = [
+        os.path.join(input_dir, filename)
+        for filename in os.listdir(input_dir)
+        if filename.split(".")[-1].lower().lower() in ["jpg", "jpeg", "png", "ppm"]
+    ]
 
-    this_dir = os.path.dirname(os.path.realpath(__file__))
-    test_dir = os.path.join(this_dir, '..', 'results-unpair', conf, args.name)
-    print(f"Out dir: {test_dir}")
+    os.makedirs(output_dir, exist_ok=True)
+    os.system(f"cp {os.path.join(input_dir, '*.txt')} {output_dir}")
 
-    for lr_path, idx_test in tqdm.tqdm(zip(lr_paths, range(len(lr_paths)))):
-
-        lr = imread(lr_path)
-        raw_shape = lr.shape
-        
-        lr, padding_params = auto_padding(lr)
-        his = hiseq_color_cv2_img(lr)
-        if opt.get("histeq_as_input", False):
-            lr = his
-
-        lr_t = t(lr)
-        if opt["datasets"]["train"].get("log_low", False):
-            lr_t = torch.log(torch.clamp(lr_t + 1e-3, min=1e-3))
-        if opt.get("concat_histeq", False):
-            his = t(his)
-            lr_t = torch.cat([lr_t, his], dim=1)
-        heat = opt['heat']
-        with torch.cuda.amp.autocast():
-            sr_t = model.get_sr(lq=lr_t.cuda(), heat=None)
-
-        sr = rgb(torch.clamp(sr_t, 0, 1)[:, :, padding_params[0]:sr_t.shape[2] - padding_params[1],
-                 padding_params[2]:sr_t.shape[3] - padding_params[3]])
-        
-
-        assert raw_shape == sr.shape
-        path_out_sr = os.path.join(test_dir, os.path.basename(lr_path))
-        imwrite(path_out_sr, sr)
+    for lr_path in tqdm.tqdm(lr_paths):
+        path_out_sr = os.path.join(output_dir, os.path.basename(lr_path))
+        inference_for_image(lr_path, path_out_sr, opt, model)
 
 
 def format_measurements(meas):
