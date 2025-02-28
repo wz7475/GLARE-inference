@@ -1,4 +1,7 @@
-#  [ECCV 2024] GLARE: Low Light Image Enhancement via Generative Latent Feature based Codebook Retrieval [[Paper]](https://arxiv.org/pdf/2407.12431)
+# GLARE inference
+Adjust original GLARE repo for inference for dir of images and annotations (check out info below)
+
+##  [ECCV 2024] GLARE: Low Light Image Enhancement via Generative Latent Feature based Codebook Retrieval [[Paper]](https://arxiv.org/pdf/2407.12431)
 
 <h4 align="center">Han Zhou<sup>1,*</sup>, Wei Dong<sup>1,*</sup>, Xiaohong Liu<sup>2,&dagger;</sup>, Shuaicheng Liu<sup>3</sup>, Xiongkuo Min<sup>2</sup>, Guangtao Zhai<sup>2</sup>, Jun Chen<sup>1,&dagger;</sup></center>
 <h4 align="center"><sup>1</sup>McMaster University, <sup>2</sup>Shanghai Jiao Tong University, 
